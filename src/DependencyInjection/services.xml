@@ -90,5 +90,20 @@
             <argument type="service" id="UnzerPayment6\Components\CancelService\CancelService"/>
             <argument type="service" id="unzer_payment.logger"/>
         </service>
+
+        <!-- Decorator for OrderTransactionStateHandler to handle 3DS race conditions -->
+        <service id="UnzerPayment6\Components\Decorator\OrderTransactionStateHandlerDecorator" decorates="Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionStateHandler">
+            <argument type="service" id="UnzerPayment6\Components\Decorator\OrderTransactionStateHandlerDecorator.inner"/>
+            <argument type="service" id="unzer_payment.logger"/>
+        </service>
+
+        <!-- Decorator for PaymentProcessor to handle 3DS finalization issues -->
+        <service id="UnzerPayment6\Components\Decorator\PaymentProcessorDecorator" decorates="Shopware\Core\Checkout\Payment\PaymentProcessor">
+            <argument type="service" id="UnzerPayment6\Components\Decorator\PaymentProcessorDecorator.inner"/>
+            <argument type="service" id="unzer_payment.logger"/>
+            <argument type="service" id="UnzerPayment6\Components\ClientFactory\ClientFactory"/>
+            <argument type="service" id="UnzerPayment6\Components\ConfigReader\ConfigReader"/>
+            <argument type="service" id="order_transaction.repository"/>
+        </service>
     </services>
 </container>

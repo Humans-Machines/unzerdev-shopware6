@@ -103,6 +103,10 @@ class KeyPairConfigReader
 
         $keyPairConfigs = $configData->get($configKey);
 
+        // TODO: keyPairConfigs is empty string
+        if(!is_array($keyPairConfigs))
+            return $privateKey;
+
         foreach ($keyPairConfigs as $keyPairConfig) {
             $customerType = $keyPairContext->isB2B() ? 'b2b' : 'b2c';
             $currentKey   = sprintf('%s-%s', $customerType, strtolower($keyPairContext->getCurrencyIsoCode()));

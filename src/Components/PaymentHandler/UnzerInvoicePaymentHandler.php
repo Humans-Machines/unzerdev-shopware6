@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace UnzerPayment6\Components\PaymentHandler;
 
+use Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionEntity;
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
 use Shopware\Core\Checkout\Payment\PaymentException;
+use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\Struct\Struct;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 use UnzerPayment6\Components\PaymentHandler\Exception\UnzerPaymentProcessException;
 use UnzerPayment6\Components\PaymentHandler\Traits\CanCharge;
@@ -24,18 +30,22 @@ class UnzerInvoicePaymentHandler extends AbstractUnzerPaymentHandler
      * {@inheritdoc}
      */
     public function pay(
-        AsyncPaymentTransactionStruct $transaction,
-        RequestDataBag                $dataBag,
-        SalesChannelContext           $salesChannelContext
+        Request $request,
+        PaymentTransactionStruct $transaction,
+        Context $context,
+        ?Struct $validateStruct
     ): RedirectResponse
     {
-        parent::pay($transaction, $dataBag, $salesChannelContext);
+        parent::pay($request, $transaction, $context, $validateStruct);
+
+        $dataBag = new RequestDataBag($request->request->all());
 
         try {
             $returnUrl = $this->charge($transaction->getReturnUrl());
 
-            $orderTransaction = $transaction->getOrderTransaction();
-            $this->saveTransferInfo($orderTransaction, $salesChannelContext->getContext());
+            $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
+
+            $this->saveTransferInfo($orderTransaction, $context);
 
             return new RedirectResponse($returnUrl);
         } catch (UnzerApiException $apiException) {
@@ -49,11 +59,11 @@ class UnzerInvoicePaymentHandler extends AbstractUnzerPaymentHandler
             );
 
             $this->executeFailTransition(
-                $transaction->getOrderTransaction()->getId(),
-                $salesChannelContext->getContext()
+                $transaction->getOrderTransactionId(),
+                $context
             );
 
-            throw new UnzerPaymentProcessException($transaction->getOrder()->getId(), $transaction->getOrderTransaction()->getId(), $apiException);
+            throw new UnzerPaymentProcessException("TODO Order Id", $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
@@ -64,7 +74,7 @@ class UnzerInvoicePaymentHandler extends AbstractUnzerPaymentHandler
                 ]
             );
 
-            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransaction()->getId(), $exception->getMessage());
+            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransactionId(), $exception->getMessage());
         }
     }
 }

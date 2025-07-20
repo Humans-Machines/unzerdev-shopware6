@@ -12,6 +12,7 @@ use Shopware\Storefront\Page\Checkout\Finish\CheckoutFinishPageLoader;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use UnzerPayment6\Components\PaymentHandler\Exception\PaymentPendingException;
 use UnzerPayment6\Components\PaymentHandler\Exception\UnzerPaymentProcessException;
 
 #[Route(defaults: ['_routeScope' => ['storefront']])]
@@ -88,13 +89,16 @@ class UnzerCheckoutController extends CheckoutController
         if ($request->get('paymentFailed', false) === true && !empty($unzerPaymentExceptionMessage)) {
             $page = $this->finishPageLoader->load($request, $context);
 
-            $this->addFlash(
-                'danger',
-                sprintf(
-                    '%s %s',
-                    $unzerPaymentExceptionMessage,
+            // Provide more helpful messaging based on the error type
+            $isPaymentProcessingError = strpos($unzerPaymentExceptionMessage, 'pending') !== false || 
+                                       strpos($unzerPaymentExceptionMessage, 'processing') !== false ||
+                                       strpos($unzerPaymentExceptionMessage, 'still being processed') !== false;
+            
+            if ($isPaymentProcessingError) {
+                $this->addFlash(
+                    'warning',
                     $this->trans(
-                        'UnzerPayment.finishPaymentFailed',
+                        'UnzerPayment.paymentProcessingInProgress',
                         [
                             '%editOrderUrl%' => $this->generateUrl(
                                 'frontend.account.edit-order.page',
@@ -102,8 +106,30 @@ class UnzerCheckoutController extends CheckoutController
                             ),
                         ]
                     )
-                )
-            );
+                );
+                
+                $this->addFlash(
+                    'info',
+                    $this->trans('UnzerPayment.paymentProcessingAdvice')
+                );
+            } else {
+                $this->addFlash(
+                    'danger',
+                    sprintf(
+                        '%s %s',
+                        $unzerPaymentExceptionMessage,
+                        $this->trans(
+                            'UnzerPayment.finishPaymentFailed',
+                            [
+                                '%editOrderUrl%' => $this->generateUrl(
+                                    'frontend.account.edit-order.page',
+                                    ['orderId' => $request->get('orderId')]
+                                ),
+                            ]
+                        )
+                    )
+                );
+            }
 
             return $this->renderStorefront(
                 '@Storefront/storefront/page/checkout/finish/index.html.twig',

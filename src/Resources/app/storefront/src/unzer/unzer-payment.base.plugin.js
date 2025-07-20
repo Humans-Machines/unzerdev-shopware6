@@ -9,7 +9,7 @@ export default class UnzerPaymentBasePlugin extends Plugin {
         resourceIdElementId: 'unzerResourceId',
         confirmFormId: 'confirmOrderForm',
         errorWrapperClass: 'unzer-payment--error-wrapper',
-        errorContentSelector: '.unzer-payment--error-wrapper .alert-content',
+        errorContentSelector: '.unzer-payment--error-wrapper .alert-content-container',
         errorShouldNotBeEmpty: '%field% should not be empty',
         isOrderEdit: false
     };
@@ -207,6 +207,9 @@ export default class UnzerPaymentBasePlugin extends Plugin {
     _clearErrorMessage() {
         const errorWrapper = document.getElementsByClassName(this.options.errorWrapperClass).item(0);
         const errorContent = document.querySelectorAll(this.options.errorContentSelector)[0];
+
+        if (errorWrapper === null || errorContent === null)
+            return;
 
         errorWrapper.hidden = true;
         errorContent.innerText = '';

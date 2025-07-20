@@ -55,7 +55,7 @@ class UnzerPaymentTransactionController extends AbstractController
         $client = $this->clientFactory->createClient(KeyPairContext::createFromOrderTransaction($transaction));
 
         try {
-            $payment = $client->fetchPaymentByOrderId($orderTransactionId);
+            $payment = $client->fetchPaymentByOrderId($transaction->getOrderId());
             $payment = $client->fetchPayment($payment);
 
             $data = $this->hydrator->hydrateArray($payment, $transaction, $client);

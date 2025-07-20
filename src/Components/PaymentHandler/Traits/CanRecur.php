@@ -7,10 +7,12 @@ namespace UnzerPayment6\Components\PaymentHandler\Traits;
 use RuntimeException;
 use Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionEntity;
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
+use UnzerPayment6\Installer\PaymentInstaller;
 use UnzerSDK\Exceptions\UnzerApiException;
 use UnzerSDK\Resources\AbstractUnzerResource;
 use UnzerSDK\Unzer;
@@ -64,14 +66,20 @@ trait CanRecur
     }
 
     protected function recur(
-        AsyncPaymentTransactionStruct $transaction,
+        PaymentTransactionStruct $transaction,
         SalesChannelContext $salesChannelContext
     ): void {
-        $orderTransaction = $this->fetchTransactionById($transaction->getOrderTransaction()->getId(), $salesChannelContext->getContext());
+        $orderTransaction = $this->fetchTransactionById($transaction->getOrderTransactionId(), $salesChannelContext->getContext());
 
-        $this->unzerBasket   = $this->basketHydrator->hydrateObject($salesChannelContext, $orderTransaction ?? $transaction);
-        $this->unzerMetadata = $this->metadataHydrator->hydrateObject($salesChannelContext, $orderTransaction ?? $transaction);
-        $this->unzerCustomer = $this->getUnzerCustomer($transaction->getOrderTransaction()->getCustomFields()[$this->sessionCustomerIdKey] ?? '', $transaction->getOrderTransaction()->getPaymentMethodId(), $salesChannelContext);
+        if ($orderTransaction === null) {
+            throw new RuntimeException('Order transaction not found for transaction ID: ' . $transaction->getOrderTransactionId());
+        }
+
+        $this->unzerBasket   = $this->basketHydrator->hydrateObject($salesChannelContext, $orderTransaction);
+        $this->unzerMetadata = $this->metadataHydrator->hydrateObject($salesChannelContext, $orderTransaction);
+
+        $paymentMethodId = $orderTransaction->getPaymentMethodId();
+        $this->unzerCustomer = $this->getUnzerCustomer($orderTransaction->getCustomFields()[$this->sessionCustomerIdKey] ?? '', $paymentMethodId, $salesChannelContext);
     }
 
     protected function fetchTransactionById(string $transactionId, Context $context): ?OrderTransactionEntity

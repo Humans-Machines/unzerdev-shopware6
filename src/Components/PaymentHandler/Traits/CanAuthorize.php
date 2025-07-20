@@ -45,6 +45,13 @@ trait CanAuthorize
             $authorization->setRiskData($riskData);
         }
 
+        $this->logger->error(json_encode([
+            $authorization,
+            $this->paymentType,
+            $this->unzerCustomer,
+            $this->unzerMetadata,
+            $this->unzerBasket
+        ]));
         $paymentResult = $this->unzerClient->performAuthorization(
             $authorization,
             $this->paymentType,

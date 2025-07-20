@@ -29,4 +29,10 @@ class OrderTransactionExtension extends EntityExtension
     {
         return OrderTransactionDefinition::class;
     }
+
+
+    public function getEntityName(): string
+    {
+        return 'order_transaction';
+    }
 }

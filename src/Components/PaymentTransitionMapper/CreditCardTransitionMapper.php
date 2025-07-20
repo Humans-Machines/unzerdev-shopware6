@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace UnzerPayment6\Components\PaymentTransitionMapper;
 
+use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\Framework\Context;
 use Shopware\Core\System\StateMachine\Aggregation\StateMachineTransition\StateMachineTransitionActions;
 use UnzerPayment6\Components\BookingMode;
 use UnzerPayment6\Components\ConfigReader\ConfigReader;
@@ -23,10 +27,16 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
     private const BOOKING_MODE_KEY = ConfigReader::CONFIG_KEY_BOOKING_MODE_CARD;
     private const DEFAULT_MODE     = BookingMode::CHARGE;
 
-    public function __construct(ConfigReaderInterface $configReader, EntityRepository $orderTransactionRepository)
-    {
+    private LoggerInterface $logger;
+
+    public function __construct(
+        ConfigReaderInterface $configReader, 
+        EntityRepository $orderTransactionRepository,
+        LoggerInterface $logger
+    ) {
         $this->configReader               = $configReader;
         $this->orderTransactionRepository = $orderTransactionRepository;
+        $this->logger = $logger;
     }
 
     public function supports(BasePaymentType $paymentType): bool
@@ -40,6 +50,29 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
 
         if ($bookingMode !== self::DEFAULT_MODE) {
             return $this->mapForAuthorizeMode($paymentObject);
+        }
+
+        // Handle 3DS pending transactions
+        if ($paymentObject->isPending()) {
+            $orderId = $paymentObject->getOrderId();
+            if ($orderId) {
+                $currentState = $this->getCurrentTransactionState($orderId);
+                
+                // If transaction is still in open state, it's likely a 3DS transaction
+                // Use process action to move it to in_progress to avoid error redirect
+                if ($currentState === 'open') {
+                    $this->logger->info('3DS pending transaction detected, setting to in_progress', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState
+                    ]);
+                    return StateMachineTransitionActions::ACTION_PROCESS;
+                }
+                
+                // If transaction is already in paid/in_progress state, keep it there
+                if (in_array($currentState, ['paid', 'paid_partially', 'in_progress'], true)) {
+                    return StateMachineTransitionActions::ACTION_PAID;
+                }
+            }
         }
 
         return parent::getTargetPaymentStatus($paymentObject);
@@ -77,5 +110,32 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
         }
 
         return $this->checkForRefund($paymentObject, $this->mapPaymentStatus($paymentObject));
+    }
+
+    private function getCurrentTransactionState(string $orderId): ?string
+    {
+        try {
+            $criteria = new Criteria();
+            $criteria->addFilter(new EqualsFilter('orderId', $orderId));
+            $criteria->addAssociation('stateMachineState');
+            
+            $result = $this->orderTransactionRepository->search($criteria, Context::createDefaultContext());
+            $transaction = $result->first();
+            
+            if ($transaction === null) {
+                return null;
+            }
+            
+            $stateMachineState = $transaction->getStateMachineState();
+            if ($stateMachineState === null) {
+                return null;
+            }
+            
+            return $stateMachineState->getTechnicalName();
+            
+        } catch (\Throwable $exception) {
+            // If we can't determine the state, return null
+            return null;
+        }
     }
 }

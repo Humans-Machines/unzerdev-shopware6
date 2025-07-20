@@ -82,7 +82,7 @@ class ShipService implements ShipServiceInterface
         }
 
         $client  = $this->clientFactory->createClient(KeyPairContext::createFromOrderTransaction($transaction));
-        $payment = $this->getPayment($orderTransactionId, $documentDate, $client);
+        $payment = $this->getPayment($transaction->getOrderId(), $documentDate, $client);
 
         if ($payment === null) {
             $this->logger->error(sprintf('Error while sending shipping notification for order [%s]: Payment could not be fetched', $order->getOrderNumber()));
@@ -115,10 +115,10 @@ class ShipService implements ShipServiceInterface
         return $this->orderTransactionRepository->search($criteria, $context)->first();
     }
 
-    protected function getPayment(string $orderTransactionId, DateTimeInterface $documentDate, Unzer $client): ?Payment
+    protected function getPayment(string $orderId, DateTimeInterface $documentDate, Unzer $client): ?Payment
     {
         try {
-            $payment = $client->fetchPaymentByOrderId($orderTransactionId);
+            $payment = $client->fetchPaymentByOrderId($orderId);
         } catch (UnzerApiException $exception) {
             return null;
         }

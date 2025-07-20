@@ -17,7 +17,10 @@ use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
+use Symfony\Component\Routing\Loader\PhpFileLoader;
 use UnzerPayment6\Components\UnzerPaymentClassLoader;
+use UnzerPayment6\DependencyInjection\Compiler\RegisterBundlePathCompilerPass;
 use UnzerPayment6\Installer\CustomFieldInstaller;
 use UnzerPayment6\Installer\PaymentInstaller;
 
@@ -41,6 +44,11 @@ class UnzerPayment6 extends Plugin
         $loader->load('container.xml');
 
         parent::build($container);
+
+       # $container->setParameter('UnzerPayment6.plugin_directory', \dirname(__DIR__));
+
+
+        $container->addCompilerPass(new RegisterBundlePathCompilerPass(__DIR__ . '/..'));
     }
 
     /**

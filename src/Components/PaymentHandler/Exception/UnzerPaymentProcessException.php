@@ -7,6 +7,8 @@ namespace UnzerPayment6\Components\PaymentHandler\Exception;
 use Shopware\Core\Checkout\Payment\PaymentException;
 use Symfony\Component\HttpFoundation\Response;
 use UnzerSDK\Exceptions\UnzerApiException;
+use function Sentry\captureException;
+use function Sentry\captureMessage;
 
 class UnzerPaymentProcessException extends PaymentException
 {

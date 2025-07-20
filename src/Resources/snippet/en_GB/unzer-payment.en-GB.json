@@ -90,6 +90,8 @@
             "title": "Your saved means of payment"
         },
         "finishPaymentFailed": "<a href=\"%editOrderUrl%\">Change payment method</a>",
+        "paymentProcessingInProgress": "Your payment is currently being processed. Please wait a moment and check your order status in <a href=\"%editOrderUrl%\">your account</a>.",
+        "paymentProcessingAdvice": "If your payment was successful but you were redirected here, your order is likely being processed. Please check your email for confirmation or contact our support.",
         "birthdayInvalid": "You need to be at least 18 years old.",
         "companyType": {
             "label": "Type of company",

@@ -12,8 +12,12 @@ use Shopware\Core\Checkout\Order\Aggregate\OrderLineItem\OrderLineItemCollection
 use Shopware\Core\Checkout\Order\Aggregate\OrderLineItem\OrderLineItemEntity;
 use Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionEntity;
 use Shopware\Core\Checkout\Order\OrderEntity;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
 use Shopware\Core\Checkout\Shipping\ShippingMethodEntity;
+use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Swag\CustomizedProducts\Core\Checkout\CustomizedProductsCartDataCollector;
 use UnzerPayment6\UnzerPayment6;
@@ -24,7 +28,27 @@ use UnzerSDK\Resources\EmbeddedResources\BasketItem;
 
 class BasketResourceHydrator implements ResourceHydratorInterface
 {
+    public function __construct(
+        protected readonly EntityRepository $transactionRepository)
+    {
+
+    }
+
     private const UNDEFINED_SHIPPING_METHOD_NAME = 'UndefinedShippingMethod';
+
+    protected function loadOrderByTransactionId($orderTransactionId, Context $context): ?OrderEntity
+    {
+        $criteria = new Criteria([$orderTransactionId]);
+        $criteria->addAssociations([
+            'order',
+            'order.currency',
+            'order.lineItems'
+        ]);
+
+        $orderTransaction = $this->transactionRepository->search($criteria, $context)->first();
+
+        return $orderTransaction->getOrder();
+    }
 
     /**
      * {@inheritdoc}
@@ -34,25 +58,25 @@ class BasketResourceHydrator implements ResourceHydratorInterface
                             $transaction = null
     ): AbstractUnzerResource
     {
-        if (!($transaction instanceof AsyncPaymentTransactionStruct) && !($transaction instanceof OrderTransactionEntity)) {
+        if (!($transaction instanceof PaymentTransactionStruct) && !($transaction instanceof OrderTransactionEntity)) {
             throw new InvalidArgumentException('Transaction struct can not be null');
         }
 
-        $order = $transaction->getOrder();
+        if ($transaction instanceof PaymentTransactionStruct) {
+            $order = $this->loadOrderByTransactionId($transaction->getOrderTransactionId(), $channelContext->getContext());
+        } else {
+            $order = $transaction->getOrder();
+        }
+
 
         if ($order === null) {
             throw new InvalidArgumentException('Order can not be null');
         }
 
-        if ($transaction instanceof AsyncPaymentTransactionStruct) {
-            $transactionId = $transaction->getOrderTransaction()->getId();
-        } else {
-            $transactionId = $transaction->getId();
-        }
-        return $this->generateUnzerBasket($order, $transactionId, $channelContext);
+        return $this->generateUnzerBasket($order, $channelContext);
     }
 
-    public function generateUnzerBasket(OrderEntity $order, string $transactionId, SalesChannelContext $channelContext): Basket
+    public function generateUnzerBasket(OrderEntity $order, SalesChannelContext $channelContext): Basket
     {
         /** @var int $currencyPrecision */
         $currencyPrecision = $order->getCurrency() !== null ? min(
@@ -61,7 +85,7 @@ class BasketResourceHydrator implements ResourceHydratorInterface
         ) : UnzerPayment6::MAX_DECIMAL_PRECISION;
 
         $unzerBasket = new Basket();
-        $unzerBasket->setOrderId($transactionId);
+        $unzerBasket->setOrderId($order->getId());
         $unzerBasket->setTotalValueGross(round($order->getAmountTotal(), $currencyPrecision));
         $unzerBasket->setCurrencyCode($order->getCurrency()->getIsoCode());
 
@@ -110,7 +134,7 @@ class BasketResourceHydrator implements ResourceHydratorInterface
             $basketItem->setTitle($label);
             $basketItem->setQuantity($lineItem->getQuantity());
             $basketItem->setType($lineItem->getUnitPrice() < 0 ? BasketItemTypes::VOUCHER : BasketItemTypes::GOODS);
-            $basketItem->setImageUrl($lineItem->getCover() ? $lineItem->getCover()->getUrl() : null);
+            $basketItem->setImageUrl($lineItem->getCover()?->getUrl());
 
             $taxCounter = 0;
             $amountTax = 0.0;

@@ -5,12 +5,19 @@ declare(strict_types=1);
 namespace UnzerPayment6\Components\PaymentHandler;
 
 use Psr\Log\LoggerInterface;
+use Shopware\Core\Checkout\Order\Aggregate\OrderTransaction\OrderTransactionEntity;
+use Shopware\Core\Checkout\Order\OrderEntity;
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
-use Shopware\Core\Checkout\Payment\Cart\PaymentHandler\AsynchronousPaymentHandlerInterface;
+use Shopware\Core\Checkout\Payment\Cart\PaymentHandler\AbstractPaymentHandler;
+use Shopware\Core\Checkout\Payment\Cart\PaymentHandler\PaymentHandlerType;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
 use Shopware\Core\Checkout\Payment\PaymentException;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\Struct\Struct;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
+use Shopware\Core\System\SalesChannel\Context\AbstractSalesChannelContextFactory;
+use Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,8 +41,11 @@ use UnzerSDK\Resources\Payment;
 use UnzerSDK\Resources\PaymentTypes\BasePaymentType;
 use UnzerSDK\Resources\Recurring;
 use UnzerSDK\Unzer;
+use Shopware\Core\PlatformRequest;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 
-abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandlerInterface
+abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
 {
     /** @var BasePaymentType */
     protected $paymentType;
@@ -71,22 +81,58 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
         protected readonly ClientFactoryInterface            $clientFactory,
         protected readonly RequestStack                      $requestStack,
         protected readonly LoggerInterface                   $logger,
-        protected readonly CustomFieldsHelperInterface       $customFieldsHelper
+        protected readonly CustomFieldsHelperInterface       $customFieldsHelper,
+        protected readonly AbstractSalesChannelContextFactory $salesChannelContextFactory
     )
     {
 
     }
 
+    protected function getOrderTransactionById(string $transactionId, Context $context): OrderTransactionEntity
+    {
+        $criteria = new Criteria([$transactionId]);
+        return $this->transactionRepository->search($criteria, $context)->first();
+    }
+
+    protected function getOrderByTransactionId(string $transactionId, Context $context): OrderEntity
+    {
+        $criteria = new Criteria([$transactionId]);
+        $criteria->addAssociations([
+            'order',
+            'order.salesChannel'
+        ]);
+
+        $orderTransaction = $this->transactionRepository->search($criteria, $context)->first();
+        assert($orderTransaction instanceof OrderTransactionEntity);
+
+        return $orderTransaction->getOrder();
+    }
+
     public function pay(
-        AsyncPaymentTransactionStruct $transaction,
-        RequestDataBag                $dataBag,
-        SalesChannelContext           $salesChannelContext
+        Request $request,
+        PaymentTransactionStruct $transaction,
+        Context $context,
+        ?Struct $validateStruct
     ): RedirectResponse
     {
-        $currentRequest = $this->getCurrentRequestFromStack($transaction->getOrderTransaction()->getId());
+
+        $salesChannelContext = $request->attributes->get(PlatformRequest::ATTRIBUTE_SALES_CHANNEL_CONTEXT_OBJECT);
+
+        // If no sales channel context from request, create a redirect to error URL  
+        if (!$salesChannelContext) {
+            $this->logger->warning('No SalesChannelContext in request - cannot process payment', [
+                'transactionId' => $transaction->getOrderTransactionId()
+            ]);
+            throw PaymentException::asyncProcessInterrupted(
+                $transaction->getOrderTransactionId(),
+                'Missing SalesChannelContext in payment request'
+            );
+        }
+
+        $currentRequest = $this->getCurrentRequestFromStack($transaction->getOrderTransactionId());
 
         try {
-            $salesChannelId = $salesChannelContext->getSalesChannel()->getId();
+            $salesChannelId = $salesChannelContext->getSalesChannelId();
 
             $this->pluginConfig = $this->configReader->read($salesChannelId);
             $this->unzerClient = $this->clientFactory->createClient(
@@ -96,7 +142,11 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
 
             $this->unzerBasket = $this->basketHydrator->hydrateObject($salesChannelContext, $transaction);
             $this->unzerMetadata = $this->metadataHydrator->hydrateObject($salesChannelContext, $transaction);
-            $this->unzerCustomer = $this->getUnzerCustomer($currentRequest->get('unzerCustomerId', ''), $transaction->getOrderTransaction()->getPaymentMethodId(), $salesChannelContext);
+
+            $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
+
+            $paymentMethodId = $orderTransaction->getPaymentMethodId();
+            $this->unzerCustomer = $this->getUnzerCustomer($currentRequest->get('unzerCustomerId', ''), $paymentMethodId, $salesChannelContext);
 
             $resourceId = $currentRequest->get('unzerResourceId', '');
 
@@ -104,7 +154,7 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
                 $this->paymentType = $this->unzerClient->fetchPaymentType($resourceId);
             }
 
-            $this->customFieldsHelper->setOrderTransactionUnzerFlag($transaction->getOrderTransaction(), $salesChannelContext->getContext());
+            $this->customFieldsHelper->setOrderTransactionUnzerFlag($orderTransaction, $salesChannelContext->getContext());
 
             return new RedirectResponse($transaction->getReturnUrl());
         } catch (UnzerApiException $apiException) {
@@ -118,11 +168,11 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
             );
 
             $this->executeFailTransition(
-                $transaction->getOrderTransaction()->getId(),
-                $salesChannelContext->getContext()
+                $transaction->getOrderTransactionId(),
+                $context
             );
 
-            throw new UnzerPaymentProcessException($transaction->getOrder()->getId(), $transaction->getOrderTransaction()->getId(), $apiException);
+            throw new UnzerPaymentProcessException($orderTransaction?->getOrderId() ?? "-", $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
@@ -133,54 +183,175 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
                 ]
             );
 
-            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransaction()->getId(), $exception->getMessage());
+            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransactionId(), $exception->getMessage());
         }
     }
 
     public function finalize(
-        AsyncPaymentTransactionStruct $transaction,
-        Request                       $request,
-        SalesChannelContext           $salesChannelContext
+        Request $request,
+        PaymentTransactionStruct $transaction,
+        Context $context
     ): void
     {
+        $this->logger->info(
+            'AbstractUnzerPaymentHandler::finalize() called',
+            [
+                'transactionId' => $transaction->getOrderTransactionId(),
+                'orderId' => $transaction->getOrderId(),
+                'paymentHandler' => static::class,
+            ]
+        );
+
+        /** @var OrderTransactionEntity|null $orderTransaction */
+        $order = $this->getOrderByTransactionId($transaction->getOrderTransactionId(), $context);
+
+        // create sales channel context from order data
+        $salesChannelContext = $this->salesChannelContextFactory->create(
+            '', // token will be generated
+            $order->getSalesChannelId(),
+            [
+                'currencyId' => $order->getCurrencyId(),
+                'languageId' => $order->getLanguageId(),
+                'customerId' => $order->getOrderCustomer()?->getCustomerId(),
+            ]
+        );
+
+        $this->logger->info(
+            'Sales channel context created for payment finalization',
+            [
+                'transactionId' => $transaction->getOrderTransactionId(),
+                'salesChannelId' => $order->getSalesChannelId(),
+                'currencyId' => $order->getCurrencyId(),
+            ]
+        );
+
         try {
-            $this->pluginConfig = $this->configReader->read($salesChannelContext->getSalesChannel()->getId());
+            $this->pluginConfig = $this->configReader->read($salesChannelContext->getSalesChannelId());
             $this->unzerClient = $this->clientFactory->createClient(
                 KeyPairContext::createFromSalesChannelContext($salesChannelContext)
             );
-            $this->payment = $this->unzerClient->fetchPaymentByOrderId(
-                $transaction->getOrderTransaction()->getId()
+            $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
+            
+            $this->logger->info(
+                'Fetching payment by order ID',
+                [
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'orderId' => $orderTransaction->getOrderId(),
+                ]
             );
+            
+            $this->payment = $this->unzerClient->fetchPaymentByOrderId(
+                $orderTransaction->getOrderId()
+            );
+
+            $this->logger->info(
+                'Payment fetched, current state before transformation',
+                [
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'paymentId' => $this->payment?->getId(),
+                    'paymentState' => $this->payment?->getStateName(),
+                    'paymentAmount' => $this->payment?->getAmount()?->getTotal(),
+                ]
+            );
+
+            // Special handling for async payment methods like PayPal
+            // If payment is pending but has successful transactions, wait for webhook processing
+            if ($this->payment && $this->payment->isPending() && $this->hasSuccessfulTransactions($this->payment)) {
+                $this->logger->info(
+                    'Payment is pending but has successful transactions - implementing wait strategy',
+                    [
+                        'transactionId' => $transaction->getOrderTransactionId(),
+                        'paymentId' => $this->payment->getId(),
+                    ]
+                );
+                
+                $maxWaitTime = 10; // seconds
+                $checkInterval = 2; // seconds
+                $attempts = $maxWaitTime / $checkInterval;
+                
+                for ($i = 0; $i < $attempts; $i++) {
+                    sleep($checkInterval);
+                    
+                    // Re-fetch payment status
+                    $this->payment = $this->unzerClient->fetchPaymentByOrderId(
+                        $orderTransaction->getOrderId()
+                    );
+                    
+                    $this->logger->info(
+                        'Re-checking payment status after webhook processing',
+                        [
+                            'transactionId' => $transaction->getOrderTransactionId(),
+                            'attempt' => $i + 1,
+                            'maxAttempts' => $attempts,
+                            'paymentState' => $this->payment?->getStateName(),
+                        ]
+                    );
+                    
+                    if ($this->payment && !$this->payment->isPending()) {
+                        $this->logger->info(
+                            'Payment status updated - proceeding with finalization',
+                            [
+                                'transactionId' => $transaction->getOrderTransactionId(),
+                                'finalState' => $this->payment->getStateName(),
+                            ]
+                        );
+                        break;
+                    }
+                }
+            }
 
             $this->transactionStateHandler->transformTransactionState(
-                $transaction->getOrderTransaction()->getId(),
+                $transaction->getOrderTransactionId(),
                 $this->payment,
-                $salesChannelContext->getContext()
+                $context
             );
 
-            $this->customFieldsHelper->setOrderTransactionCustomFields($transaction->getOrderTransaction(), $salesChannelContext->getContext());
+            $this->logger->info(
+                'Transaction state transformation completed',
+                [
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'finalPaymentState' => $this->payment?->getStateName(),
+                ]
+            );
+
+            $this->customFieldsHelper->setOrderTransactionCustomFields($orderTransaction, $context);
+            
+            $this->logger->info(
+                'Payment finalization completed successfully',
+                [
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'paymentHandler' => static::class,
+                ]
+            );
+
         } catch (UnzerApiException $apiException) {
             $this->logger->error(
-                sprintf('Caught an API exception in %s of %s', __METHOD__, __CLASS__),
+                sprintf('API exception during payment finalization in %s', static::class),
                 [
-                    'transaction' => $transaction,
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'orderId' => $transaction->getOrderId(),
+                    'apiCode' => $apiException->getCode(),
+                    'apiMessage' => $apiException->getMessage(),
                     'request' => $this->getLoggableRequest($request),
                     'exception' => $apiException,
                 ]
             );
 
-            throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransaction()->getId(), $apiException->getMessage());
+            throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransactionId(), $apiException->getMessage());
         } catch (Throwable $exception) {
             $this->logger->error(
-                sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
+                sprintf('Generic exception during payment finalization in %s', static::class),
                 [
-                    'transaction' => $transaction,
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'orderId' => $transaction->getOrderId(),
+                    'exceptionType' => get_class($exception),
+                    'message' => $exception->getMessage(),
                     'request' => $this->getLoggableRequest($request),
                     'exception' => $exception,
                 ]
             );
 
-            throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransaction()->getId(), $exception->getMessage());
+            throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransactionId(), $exception->getMessage());
         }
     }
 
@@ -282,5 +453,50 @@ abstract class AbstractUnzerPaymentHandler implements AsynchronousPaymentHandler
         }
 
         return $result;
+    }
+
+    public function supports(PaymentHandlerType $type, string $paymentMethodId, Context $context): bool
+    {
+        return true;
+    }
+
+    /**
+     * Check if the payment has successful transactions (charges) even if the overall state is pending.
+     * This is common with async payment methods like PayPal where the transaction succeeds
+     * but the payment state hasn't been updated yet due to webhook timing.
+     */
+    protected function hasSuccessfulTransactions(Payment $payment): bool
+    {
+        try {
+            $charges = $payment->getCharges();
+            if (empty($charges)) {
+                return false;
+            }
+
+            foreach ($charges as $charge) {
+                if ($charge->isSuccess()) {
+                    $this->logger->info(
+                        'Found successful charge transaction',
+                        [
+                            'paymentId' => $payment->getId(),
+                            'chargeId' => $charge->getId(),
+                            'chargeStatus' => $charge->isSuccess() ? 'success' : 'failed',
+                        ]
+                    );
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (\Throwable $exception) {
+            $this->logger->error(
+                'Error checking for successful transactions',
+                [
+                    'paymentId' => $payment->getId(),
+                    'exception' => $exception->getMessage(),
+                ]
+            );
+            return false;
+        }
     }
 }

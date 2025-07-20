@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace UnzerPayment6\Components\PaymentHandler\Traits;
 
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use UnzerPayment6\Installer\CustomFieldInstaller;
 use UnzerSDK\Resources\EmbeddedResources\RiskData;
 
 trait HasRiskDataTrait
 {
-    private function generateRiskDataResource(AsyncPaymentTransactionStruct $transaction, SalesChannelContext $context): ?RiskData
+    private function generateRiskDataResource(PaymentTransactionStruct $transaction, SalesChannelContext $context): ?RiskData
     {
         $fraudPreventionSessionId = $this->fetchFraudPreventionSessionId($transaction, $context);
 
@@ -25,7 +27,7 @@ trait HasRiskDataTrait
         $customer = $context->getCustomer();
 
         if (null !== $customer) {
-            $date = $customer->getCreatedAt() ? $customer->getCreatedAt()->format('Ymd') : null;
+            $date = $customer->getCreatedAt()?->format('Ymd');
 
             $riskData->setRegistrationLevel($customer->getGuest() ? '0' : '1');
             $riskData->setRegistrationDate($date);
@@ -34,10 +36,10 @@ trait HasRiskDataTrait
         return $riskData;
     }
 
-    private function fetchFraudPreventionSessionId(AsyncPaymentTransactionStruct $transaction, SalesChannelContext $context): ?string
+    private function fetchFraudPreventionSessionId(PaymentTransactionStruct $transaction, SalesChannelContext $context): ?string
     {
-        $orderTransaction         = $transaction->getOrderTransaction();
-        $currentRequest           = $this->getCurrentRequestFromStack($orderTransaction->getId());
+        $orderTransaction = $this->transactionRepository->search(new Criteria([$transaction->getOrderTransactionId()]), $context->getContext())->first();
+        $currentRequest           = $this->getCurrentRequestFromStack($transaction->getOrderTransactionId());
         $fraudPreventionSessionId = $currentRequest->get('unzerPaymentFraudPreventionSessionId', '');
 
         if (empty($fraudPreventionSessionId)) {

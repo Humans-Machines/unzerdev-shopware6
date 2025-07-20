@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace UnzerPayment6\Components\PaymentHandler;
 
 use Shopware\Core\Checkout\Payment\Cart\AsyncPaymentTransactionStruct;
+use Shopware\Core\Checkout\Payment\Cart\PaymentTransactionStruct;
 use Shopware\Core\Checkout\Payment\PaymentException;
+use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\Struct\Struct;
 use Shopware\Core\Framework\Validation\DataBag\RequestDataBag;
+use Shopware\Core\PlatformRequest;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 use UnzerPayment6\Components\PaymentHandler\Exception\UnzerPaymentProcessException;
 use UnzerPayment6\Components\PaymentHandler\Traits\CanAuthorize;
 use UnzerPayment6\Components\PaymentHandler\Traits\HasRiskDataTrait;
 use UnzerPayment6\UnzerPayment6;
 use UnzerSDK\Exceptions\UnzerApiException;
+use UnzerSDK\Resources\PaymentTypes\PaylaterDirectDebit;
 
 class UnzerPaylaterDirectDebitSecuredPaymentHandler extends AbstractUnzerPaymentHandler
 {
@@ -25,29 +31,39 @@ class UnzerPaylaterDirectDebitSecuredPaymentHandler extends AbstractUnzerPayment
      * {@inheritdoc}
      */
     public function pay(
-        AsyncPaymentTransactionStruct $transaction,
-        RequestDataBag                $dataBag,
-        SalesChannelContext           $salesChannelContext
+        Request $request,
+        PaymentTransactionStruct $transaction,
+        Context $context,
+        ?Struct $validateStruct
     ): RedirectResponse
     {
-        parent::pay($transaction, $dataBag, $salesChannelContext);
+        parent::pay($request, $transaction, $context, $validateStruct);
 
         $this->unzerBasket->setTotalValueGross($this->unzerBasket->getTotalValueGross());
 
-        $currentRequest = $this->getCurrentRequestFromStack($transaction->getOrderTransaction()->getId());
+        $currentRequest = $this->getCurrentRequestFromStack($transaction->getOrderTransactionId());
 
         $birthday = $currentRequest->get('unzerPaymentBirthday', '');
 
+        $salesChannelContext = $request->attributes->get(PlatformRequest::ATTRIBUTE_SALES_CHANNEL_CONTEXT_OBJECT);
+
         try {
+            // Create the payment type if it doesn't exist
+            if ($this->paymentType === null) {
+                $this->paymentType = $this->unzerClient->createPaymentType(new PaylaterDirectDebit());
+            }
+
             if (!empty($birthday)
                 && (empty($this->unzerCustomer->getBirthDate()) || $birthday !== $this->unzerCustomer->getBirthDate())) {
                 $this->unzerCustomer->setBirthDate($birthday);
                 $this->unzerClient->createOrUpdateCustomer($this->unzerCustomer);
             }
 
+            $order = $this->getOrderByTransactionId($transaction->getOrderTransactionId(), $context);
+
             /** @var int $currencyPrecision */
-            $currencyPrecision = $transaction->getOrder()->getCurrency() !== null ? min(
-                $transaction->getOrder()->getCurrency()->getItemRounding()->getDecimals(),
+            $currencyPrecision = $order->getCurrency() !== null ? min(
+                $order->getCurrency()->getItemRounding()->getDecimals(),
                 UnzerPayment6::MAX_DECIMAL_PRECISION
             ) : UnzerPayment6::MAX_DECIMAL_PRECISION;
 
@@ -55,7 +71,7 @@ class UnzerPaylaterDirectDebitSecuredPaymentHandler extends AbstractUnzerPayment
 
             $returnUrl = $this->authorize(
                 $transaction->getReturnUrl(),
-                round($transaction->getOrder()->getAmountTotal(), $currencyPrecision),
+                round($order->getAmountTotal(), $currencyPrecision),
                 null,
                 $riskData
             );
@@ -72,11 +88,11 @@ class UnzerPaylaterDirectDebitSecuredPaymentHandler extends AbstractUnzerPayment
             );
 
             $this->executeFailTransition(
-                $transaction->getOrderTransaction()->getId(),
-                $salesChannelContext->getContext()
+                $transaction->getOrderTransactionId(),
+                $context
             );
 
-            throw new UnzerPaymentProcessException($transaction->getOrder()->getId(), $transaction->getOrderTransaction()->getId(), $apiException);
+            throw new UnzerPaymentProcessException($order?->getId() ?? '-', $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
@@ -87,7 +103,7 @@ class UnzerPaylaterDirectDebitSecuredPaymentHandler extends AbstractUnzerPayment
                 ]
             );
 
-            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransaction()->getId(), $exception->getMessage());
+            throw PaymentException::asyncProcessInterrupted($transaction->getOrderTransactionId(), $exception->getMessage());
         }
     }
 }

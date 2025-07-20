@@ -15,8 +15,9 @@
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
             <argument type="service" id="UnzerPayment6\DataAbstractionLayer\Repository\PaymentDevice\UnzerPaymentDeviceRepository"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerInvoicePaymentHandler">
@@ -30,8 +31,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerInvoiceSecuredPaymentHandler">
@@ -45,8 +47,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerSofortPaymentHandler">
@@ -60,8 +63,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerEpsPaymentHandler">
@@ -75,8 +79,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPayPalPaymentHandler">
@@ -91,8 +96,9 @@
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
             <argument type="service" id="UnzerPayment6\DataAbstractionLayer\Repository\PaymentDevice\UnzerPaymentDeviceRepository"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPisPaymentHandler">
@@ -106,8 +112,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerDirectDebitPaymentHandler">
@@ -122,8 +129,9 @@
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
             <argument type="service" id="UnzerPayment6\DataAbstractionLayer\Repository\PaymentDevice\UnzerPaymentDeviceRepository" />
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerDirectDebitSecuredPaymentHandler">
@@ -138,8 +146,9 @@
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
             <argument type="service" id="UnzerPayment6\DataAbstractionLayer\Repository\PaymentDevice\UnzerPaymentDeviceRepository" />
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerIdealPaymentHandler">
@@ -153,8 +162,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerGiropayPaymentHandler">
@@ -168,8 +178,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPrePaymentPaymentHandler">
@@ -183,8 +194,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPrzelewyHandler">
@@ -198,8 +210,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerAlipayPaymentHandler">
@@ -213,8 +226,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerWeChatPaymentHandler">
@@ -228,8 +242,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerInstallmentSecuredPaymentHandler">
@@ -243,8 +258,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerBancontactHandler">
@@ -258,8 +274,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPaylaterInvoicePaymentHandler">
@@ -273,8 +290,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerApplePayPaymentHandler">
@@ -288,8 +306,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerApplePayV2PaymentHandler">
@@ -303,8 +322,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPaylaterInstallmentPaymentHandler">
@@ -318,8 +338,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerPaylaterDirectDebitSecuredPaymentHandler">
@@ -333,8 +354,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerGooglePayPaymentHandler">
@@ -348,8 +370,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerTwintPaymentHandler">
@@ -363,8 +386,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
         <service id="UnzerPayment6\Components\PaymentHandler\UnzerOpenBankingPaymentHandler">
@@ -378,8 +402,9 @@
             <argument type="service" id="request_stack" />
             <argument type="service" id="unzer_payment.logger"/>
             <argument type="service" id="UnzerPayment6\Components\CustomFieldsHelper\CustomFieldsHelper"/>
+            <argument type="service" id="Shopware\Core\System\SalesChannel\Context\SalesChannelContextFactory"/>
 
-            <tag name="shopware.payment.method.async" />
+            <tag name="shopware.payment.method" />
         </service>
 
     </services>
