@@ -164,7 +164,9 @@ class UnzerCreditCardPaymentHandler extends AbstractUnzerPaymentHandler
                 );
             }
 
-            return new RedirectResponse($returnUrl);
+            // Transform return URL for reverse proxy setups
+            $transformedReturnUrl = $this->transformReturnUrl($returnUrl, $request);
+            return new RedirectResponse($transformedReturnUrl);
         } catch (UnzerApiException $apiException) {
             $this->logger->error(
                 sprintf('Caught an API exception in %s of %s', __METHOD__, __CLASS__),
@@ -229,10 +231,10 @@ class UnzerCreditCardPaymentHandler extends AbstractUnzerPaymentHandler
             $this->unzerClient = $this->clientFactory->createClient(
                 KeyPairContext::createFromSalesChannelContext($salesChannelContext)
             );
-            
+
             $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
             $payment = $this->unzerClient->fetchPaymentByOrderId($orderTransaction->getOrderId());
-            
+
             $this->logger->info(
                 'Pre-finalize payment status check',
                 [
@@ -269,10 +271,10 @@ class UnzerCreditCardPaymentHandler extends AbstractUnzerPaymentHandler
                     'exception' => $exception->getMessage(),
                 ]
             );
-            
+
             // Illegal transitions are now handled by PaymentProcessorDecorator
             $this->logger->info('Credit Card finalize error - will be handled by PaymentProcessorDecorator if race condition related');
-            
+
             throw $exception;
         }
     }

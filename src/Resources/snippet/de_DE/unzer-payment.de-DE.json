@@ -91,7 +91,7 @@
             "title": "Ihre gespeicherten Zahlungsmittel"
         },
         "finishPaymentFailed": "<a href=\"%editOrderUrl%\">Zahlung ändern</a>",
-        "paymentProcessingInProgress": "Ihre Zahlung wird derzeit verarbeitet. Bitte warten Sie einen Moment und überprüfen Sie Ihren Bestellstatus in <a href=\"%editOrderUrl%\">Ihrem Konto</a>.",
+        "paymentProcessingInProgress": "Ihre Zahlung wird derzeit verarbeitet. Bitte warten Sie einen Moment und aktualisieren Sie die Seite. Ihre Bestellung wird automatisch bestätigt, sobald die Zahlung abgeschlossen ist.",
         "paymentProcessingAdvice": "Falls Ihre Zahlung erfolgreich war, aber Sie hierher umgeleitet wurden, wird Ihre Bestellung wahrscheinlich verarbeitet. Bitte prüfen Sie Ihre E-Mails auf eine Bestätigung oder kontaktieren Sie unseren Support.",
         "birthdayInvalid": "Sie müssen mindestens 18 Jahre alt sein.",
         "companyType": {

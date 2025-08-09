@@ -71,6 +71,9 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
     /** @var Configuration */
     protected $pluginConfig;
 
+    /** @var Request|null */
+    protected $currentRequest;
+
     public function __construct(
         protected readonly ResourceHydratorInterface         $basketHydrator,
         protected readonly CustomerResourceHydratorInterface $customerHydrator,
@@ -130,6 +133,7 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
         }
 
         $currentRequest = $this->getCurrentRequestFromStack($transaction->getOrderTransactionId());
+        $this->currentRequest = $currentRequest; // Store for use in traits
 
         try {
             $salesChannelId = $salesChannelContext->getSalesChannelId();
@@ -156,7 +160,9 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
 
             $this->customFieldsHelper->setOrderTransactionUnzerFlag($orderTransaction, $salesChannelContext->getContext());
 
-            return new RedirectResponse($transaction->getReturnUrl());
+            // Transform return URL for reverse proxy setups
+            $returnUrl = $this->transformReturnUrl($transaction->getReturnUrl(), $request);
+            return new RedirectResponse($returnUrl);
         } catch (UnzerApiException $apiException) {
             $this->logger->error(
                 sprintf('Caught an API exception in %s of %s', __METHOD__, __CLASS__),
@@ -254,51 +260,7 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
                 ]
             );
 
-            // Special handling for async payment methods like PayPal
-            // If payment is pending but has successful transactions, wait for webhook processing
-            if ($this->payment && $this->payment->isPending() && $this->hasSuccessfulTransactions($this->payment)) {
-                $this->logger->info(
-                    'Payment is pending but has successful transactions - implementing wait strategy',
-                    [
-                        'transactionId' => $transaction->getOrderTransactionId(),
-                        'paymentId' => $this->payment->getId(),
-                    ]
-                );
-                
-                $maxWaitTime = 10; // seconds
-                $checkInterval = 2; // seconds
-                $attempts = $maxWaitTime / $checkInterval;
-                
-                for ($i = 0; $i < $attempts; $i++) {
-                    sleep($checkInterval);
-                    
-                    // Re-fetch payment status
-                    $this->payment = $this->unzerClient->fetchPaymentByOrderId(
-                        $orderTransaction->getOrderId()
-                    );
-                    
-                    $this->logger->info(
-                        'Re-checking payment status after webhook processing',
-                        [
-                            'transactionId' => $transaction->getOrderTransactionId(),
-                            'attempt' => $i + 1,
-                            'maxAttempts' => $attempts,
-                            'paymentState' => $this->payment?->getStateName(),
-                        ]
-                    );
-                    
-                    if ($this->payment && !$this->payment->isPending()) {
-                        $this->logger->info(
-                            'Payment status updated - proceeding with finalization',
-                            [
-                                'transactionId' => $transaction->getOrderTransactionId(),
-                                'finalState' => $this->payment->getStateName(),
-                            ]
-                        );
-                        break;
-                    }
-                }
-            }
+            // Race conditions are now handled by PaymentProcessorDecorator
 
             $this->transactionStateHandler->transformTransactionState(
                 $transaction->getOrderTransactionId(),
@@ -461,42 +423,96 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
     }
 
     /**
-     * Check if the payment has successful transactions (charges) even if the overall state is pending.
-     * This is common with async payment methods like PayPal where the transaction succeeds
-     * but the payment state hasn't been updated yet due to webhook timing.
+     * Optional URL transformation for reverse proxy or custom routing setups.
+     * Can be disabled by setting UNZER_DISABLE_URL_TRANSFORM=1 in environment.
+     * 
+     * Default behavior checks for X-Forwarded-Host header.
+     * Can be customized by setting UNZER_EXTERNAL_HOST and UNZER_EXTERNAL_PROTO.
      */
-    protected function hasSuccessfulTransactions(Payment $payment): bool
+    protected function transformReturnUrl(string $returnUrl, Request $request): string
     {
-        try {
-            $charges = $payment->getCharges();
-            if (empty($charges)) {
-                return false;
-            }
+        // Check if URL transformation is disabled
+        if (getenv('UNZER_DISABLE_URL_TRANSFORM') === '1' || 
+            ($_ENV['UNZER_DISABLE_URL_TRANSFORM'] ?? false)) {
+            return $returnUrl;
+        }
 
-            foreach ($charges as $charge) {
-                if ($charge->isSuccess()) {
-                    $this->logger->info(
-                        'Found successful charge transaction',
-                        [
-                            'paymentId' => $payment->getId(),
-                            'chargeId' => $charge->getId(),
-                            'chargeStatus' => $charge->isSuccess() ? 'success' : 'failed',
-                        ]
-                    );
-                    return true;
-                }
-            }
+        // Get external host from environment or headers
+        $externalHost = $_ENV['UNZER_EXTERNAL_HOST'] ?? 
+                       getenv('UNZER_EXTERNAL_HOST') ?: 
+                       $request->headers->get('X-Forwarded-Host');
+                       
+        $externalProto = $_ENV['UNZER_EXTERNAL_PROTO'] ?? 
+                        getenv('UNZER_EXTERNAL_PROTO') ?: 
+                        $request->headers->get('X-Forwarded-Proto', 'https');
+        
+        if (!$externalHost) {
+            // No external host configured, return original URL
+            return $returnUrl;
+        }
 
-            return false;
-        } catch (\Throwable $exception) {
-            $this->logger->error(
-                'Error checking for successful transactions',
+        // Parse the return URL
+        $urlParts = parse_url($returnUrl);
+        if (!$urlParts || !isset($urlParts['host'])) {
+            // Invalid URL, return original
+            return $returnUrl;
+        }
+
+        // Skip transformation if already using external host
+        if ($urlParts['host'] === $externalHost) {
+            return $returnUrl;
+        }
+
+        // Skip transformation for external payment service URLs (Unzer, PayPal, etc.)
+        $externalServices = [
+            'sbx-payment.heidelpay.com',
+            'payment.heidelpay.com', 
+            'api.heidelpay.com',
+            'sbx-api.heidelpay.com',
+            'api.unzer.com',
+            'sbx-api.unzer.com',
+            'paypal.com',
+            'sandbox.paypal.com'
+        ];
+        
+        if (in_array($urlParts['host'], $externalServices)) {
+            $this->logger->info(
+                'Skipping URL transformation for external payment service',
                 [
-                    'paymentId' => $payment->getId(),
-                    'exception' => $exception->getMessage(),
+                    'url' => $returnUrl,
+                    'host' => $urlParts['host'],
                 ]
             );
-            return false;
+            return $returnUrl;
         }
+
+        // Build the external URL
+        $externalUrl = $externalProto . '://' . $externalHost;
+        
+        if (isset($urlParts['path'])) {
+            $externalUrl .= $urlParts['path'];
+        }
+        
+        if (isset($urlParts['query'])) {
+            $externalUrl .= '?' . $urlParts['query'];
+        }
+        
+        if (isset($urlParts['fragment'])) {
+            $externalUrl .= '#' . $urlParts['fragment'];
+        }
+
+        $this->logger->info(
+            'Transformed return URL (configurable)',
+            [
+                'originalUrl' => $returnUrl,
+                'externalUrl' => $externalUrl,
+                'externalHost' => $externalHost,
+                'externalProto' => $externalProto,
+                'method' => ($_ENV['UNZER_EXTERNAL_HOST'] ?? null) ? 'environment' : 'header',
+            ]
+        );
+
+        return $externalUrl;
     }
+
 }

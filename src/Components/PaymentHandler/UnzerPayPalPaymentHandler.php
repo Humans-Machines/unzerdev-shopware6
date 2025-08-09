@@ -142,7 +142,9 @@ class UnzerPayPalPaymentHandler extends AbstractUnzerPaymentHandler
                         );
                     }
 
-                    return new RedirectResponse($returnUrl);
+                    // Transform return URL for reverse proxy setups
+                    $transformedReturnUrl = $this->transformReturnUrl($returnUrl, $request);
+                    return new RedirectResponse($transformedReturnUrl);
                 }
             }
 
@@ -160,7 +162,9 @@ class UnzerPayPalPaymentHandler extends AbstractUnzerPaymentHandler
                 $context
             );
 
-            return new RedirectResponse($returnUrl);
+            // Transform return URL for reverse proxy setups
+            $transformedReturnUrl = $this->transformReturnUrl($returnUrl, $request);
+            return new RedirectResponse($transformedReturnUrl);
         } catch (UnzerApiException $apiException) {
             $this->logger->error(
                 sprintf('Caught an API exception in %s of %s', __METHOD__, __CLASS__),
@@ -244,10 +248,10 @@ class UnzerPayPalPaymentHandler extends AbstractUnzerPaymentHandler
                     throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransactionId(), 'missing payment type');
                 }
 
-                /** Return urls are needed but are not called */
+                /** Return URLs are required by API but not used in finalize context */
                 $bookingMode === BookingMode::CHARGE
-                    ? $this->charge('https://not.needed')
-                    : $this->authorize('https://not.needed');
+                    ? $this->charge('#')
+                    : $this->authorize('#');
 
                 if ($registerAccounts
                     && $salesChannelContext->getCustomer() !== null
@@ -323,7 +327,9 @@ class UnzerPayPalPaymentHandler extends AbstractUnzerPaymentHandler
                 $salesChannelContext->getContext()
             );
 
-            return new RedirectResponse($returnUrl);
+            // Transform return URL for reverse proxy setups
+            $transformedReturnUrl = $this->transformReturnUrl($returnUrl, $this->getCurrentRequestFromStack($transaction->getOrderTransactionId()));
+            return new RedirectResponse($transformedReturnUrl);
         } catch (UnzerApiException $apiException) {
             $this->logger->error(
                 sprintf('Caught an API exception in %s of %s', __METHOD__, __CLASS__),
@@ -338,7 +344,8 @@ class UnzerPayPalPaymentHandler extends AbstractUnzerPaymentHandler
                 $salesChannelContext->getContext()
             );
 
-            throw new UnzerPaymentProcessException("TODO Order Id", $transaction->getOrderTransactionId(), $apiException);
+            $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $salesChannelContext->getContext());
+            throw new UnzerPaymentProcessException($orderTransaction->getOrderId(), $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),

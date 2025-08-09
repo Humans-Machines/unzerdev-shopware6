@@ -28,10 +28,15 @@ trait CanAuthorize
             throw new RuntimeException('PaymentType can not be null');
         }
 
+        // Transform return URL for reverse proxy setups if available
+        $transformedReturnUrl = method_exists($this, 'transformReturnUrl') && $this->currentRequest
+            ? $this->transformReturnUrl($returnUrl, $this->currentRequest)
+            : $returnUrl;
+
         $authorization = new Authorization(
             $amount ?? $this->unzerBasket->getTotalValueGross(),
             $this->unzerBasket->getCurrencyCode(),
-            $returnUrl
+            $transformedReturnUrl
         );
 
         $authorization->setOrderId($this->unzerBasket->getOrderId());
