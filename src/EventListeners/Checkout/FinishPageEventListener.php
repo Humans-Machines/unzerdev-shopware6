@@ -64,7 +64,12 @@ class FinishPageEventListener implements EventSubscriberInterface
         $payment   = $this->getPaymentByOrderId($unzerClient, $unzerTransaction->getId());
 
         if (!$payment) {
-            $payment = $this->getPaymentByOrderId($unzerClient, $unzerTransaction->getOrderId());
+            $order = $unzerTransaction->getOrder();
+            if (!$order) {
+                return;
+            }
+            
+            $payment = $this->getPaymentByOrderId($unzerClient, $order->getId());
 
             if (!$payment) {
                 return;

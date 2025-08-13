@@ -79,7 +79,7 @@ class UnzerPaylaterInstallmentPaymentHandler extends AbstractUnzerPaymentHandler
                 $context
             );
 
-            throw new UnzerPaymentProcessException($orderTransaction?->getOrderId() ?? '-', $transaction->getOrderTransactionId(), $apiException);
+            throw new UnzerPaymentProcessException($orderTransaction?->getOrder()?->getId() ?? '-', $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),

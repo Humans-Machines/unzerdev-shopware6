@@ -183,7 +183,7 @@ class UnzerCreditCardPaymentHandler extends AbstractUnzerPaymentHandler
             );
 
             $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
-            throw new UnzerPaymentProcessException($orderTransaction->getOrderId(), $transaction->getOrderTransactionId(), $apiException);
+            throw new UnzerPaymentProcessException($orderTransaction->getOrder()->getId(), $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
@@ -233,7 +233,7 @@ class UnzerCreditCardPaymentHandler extends AbstractUnzerPaymentHandler
             );
 
             $orderTransaction = $this->getOrderTransactionById($transaction->getOrderTransactionId(), $context);
-            $payment = $this->unzerClient->fetchPaymentByOrderId($orderTransaction->getOrderId());
+            $payment = $this->unzerClient->fetchPaymentByOrderId($order->getId());
 
             $this->logger->info(
                 'Pre-finalize payment status check',

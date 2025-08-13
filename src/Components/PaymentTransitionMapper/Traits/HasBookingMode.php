@@ -54,6 +54,10 @@ trait HasBookingMode
 
     protected function getTransactionById(string $transactionId): ?OrderTransactionEntity
     {
+        if (!$this->orderTransactionRepository) {
+            return null;
+        }
+        
         $criteria = new Criteria([$transactionId]);
         $criteria->addAssociation('order');
 

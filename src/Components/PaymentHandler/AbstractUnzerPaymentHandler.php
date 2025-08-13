@@ -178,7 +178,7 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
                 $context
             );
 
-            throw new UnzerPaymentProcessException($orderTransaction?->getOrderId() ?? "-", $transaction->getOrderTransactionId(), $apiException);
+            throw new UnzerPaymentProcessException($orderTransaction?->getOrder()?->getId() ?? "-", $transaction->getOrderTransactionId(), $apiException);
         } catch (Throwable $exception) {
             $this->logger->error(
                 sprintf('Caught a generic exception in %s of %s', __METHOD__, __CLASS__),
@@ -199,17 +199,28 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
         Context $context
     ): void
     {
+        /** @var OrderTransactionEntity|null $orderTransaction */
+        $order = $this->getOrderByTransactionId($transaction->getOrderTransactionId(), $context);
+        
+        if (!$order) {
+            $this->logger->error(
+                'Order not found for transaction - cannot finalize payment',
+                [
+                    'transactionId' => $transaction->getOrderTransactionId(),
+                    'paymentHandler' => static::class,
+                ]
+            );
+            throw PaymentException::asyncFinalizeInterrupted($transaction->getOrderTransactionId(), 'Order not found');
+        }
+        
         $this->logger->info(
             'AbstractUnzerPaymentHandler::finalize() called',
             [
                 'transactionId' => $transaction->getOrderTransactionId(),
-                'orderId' => $transaction->getOrderId(),
+                'orderId' => $order->getId(),
                 'paymentHandler' => static::class,
             ]
         );
-
-        /** @var OrderTransactionEntity|null $orderTransaction */
-        $order = $this->getOrderByTransactionId($transaction->getOrderTransactionId(), $context);
 
         // create sales channel context from order data
         $salesChannelContext = $this->salesChannelContextFactory->create(
@@ -242,12 +253,12 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
                 'Fetching payment by order ID',
                 [
                     'transactionId' => $transaction->getOrderTransactionId(),
-                    'orderId' => $orderTransaction->getOrderId(),
+                    'orderId' => $order->getId(),
                 ]
             );
             
             $this->payment = $this->unzerClient->fetchPaymentByOrderId(
-                $orderTransaction->getOrderId()
+                $order->getId()
             );
 
             $this->logger->info(
@@ -291,7 +302,7 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
                 sprintf('API exception during payment finalization in %s', static::class),
                 [
                     'transactionId' => $transaction->getOrderTransactionId(),
-                    'orderId' => $transaction->getOrderId(),
+                    'orderId' => $order->getId(),
                     'apiCode' => $apiException->getCode(),
                     'apiMessage' => $apiException->getMessage(),
                     'request' => $this->getLoggableRequest($request),
@@ -305,7 +316,7 @@ abstract class AbstractUnzerPaymentHandler extends AbstractPaymentHandler
                 sprintf('Generic exception during payment finalization in %s', static::class),
                 [
                     'transactionId' => $transaction->getOrderTransactionId(),
-                    'orderId' => $transaction->getOrderId(),
+                    'orderId' => $order->getId(),
                     'exceptionType' => get_class($exception),
                     'message' => $exception->getMessage(),
                     'request' => $this->getLoggableRequest($request),

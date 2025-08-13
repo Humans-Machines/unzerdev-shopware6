@@ -6,9 +6,6 @@ namespace UnzerPayment6\Components\PaymentTransitionMapper;
 
 use Psr\Log\LoggerInterface;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
-use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
-use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
-use Shopware\Core\Framework\Context;
 use Shopware\Core\System\StateMachine\Aggregation\StateMachineTransition\StateMachineTransitionActions;
 use UnzerPayment6\Components\BookingMode;
 use UnzerPayment6\Components\ConfigReader\ConfigReader;
@@ -27,16 +24,14 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
     private const BOOKING_MODE_KEY = ConfigReader::CONFIG_KEY_BOOKING_MODE_CARD;
     private const DEFAULT_MODE     = BookingMode::CHARGE;
 
-    private LoggerInterface $logger;
-
     public function __construct(
         ConfigReaderInterface $configReader, 
         EntityRepository $orderTransactionRepository,
         LoggerInterface $logger
     ) {
-        $this->configReader               = $configReader;
-        $this->orderTransactionRepository = $orderTransactionRepository;
-        $this->logger = $logger;
+        parent::__construct();
+        $this->configReader = $configReader;
+        $this->setTransactionStateDependencies($orderTransactionRepository, $logger);
     }
 
     public function supports(BasePaymentType $paymentType): bool
@@ -55,11 +50,10 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
         // Handle 3DS pending transactions
         if ($paymentObject->isPending()) {
             $orderId = $paymentObject->getOrderId();
-            if ($orderId) {
+            if ($orderId && $this->transactionRepository) {
                 $currentState = $this->getCurrentTransactionState($orderId);
                 
-                // If transaction is still in open state, it's likely a 3DS transaction
-                // Use process action to move it to in_progress to avoid error redirect
+                // If transaction is still in open state, move it to in_progress
                 if ($currentState === 'open') {
                     $this->logger->info('3DS pending transaction detected, setting to in_progress', [
                         'orderId' => $orderId,
@@ -68,20 +62,107 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
                     return StateMachineTransitionActions::ACTION_PROCESS;
                 }
                 
-                // If transaction is already in paid/in_progress state, keep it there
-                if (in_array($currentState, ['paid', 'paid_partially', 'in_progress'], true)) {
-                    return StateMachineTransitionActions::ACTION_PAID;
+                // CRITICAL FIX: Never set pending payments to paid!
+                // If transaction is already in progress, keep it there but don't move to paid
+                if ($currentState === 'in_progress') {
+                    $this->logger->info('3DS pending transaction already in progress - keeping state', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState,
+                        'paymentState' => 'pending'
+                    ]);
+                    return StateMachineTransitionActions::ACTION_PROCESS; // Keep in progress
+                }
+                
+                // If somehow already paid, this should only happen for legitimate race conditions
+                if (in_array($currentState, ['paid', 'paid_partially'], true)) {
+                    $this->logger->warning('Pending payment but transaction already paid - potential race condition', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState,
+                        'paymentState' => 'pending'
+                    ]);
+                    return StateMachineTransitionActions::ACTION_PAID; // Keep existing state
                 }
             }
         }
 
-        return parent::getTargetPaymentStatus($paymentObject);
+        // Handle 3DS race condition for canceled payments
+        if ($paymentObject->isCanceled()) {
+            $orderId = $paymentObject->getOrderId();
+            if ($orderId && $this->transactionRepository) {
+                $currentState = $this->getCurrentTransactionState($orderId);
+                
+                // Check if this is a genuine fraud/failure vs race condition
+                $isFraudOrFailure = $this->isPaymentFraudOrFailure($paymentObject);
+                
+                // If transaction is already paid but payment shows fraud/failure, this is a security issue
+                if (in_array($currentState, ['paid', 'paid_partially'], true)) {
+                    if ($isFraudOrFailure) {
+                        $this->logger->critical('SECURITY ALERT: Fraud/failed payment incorrectly marked as paid - forcing to cancel state', [
+                            'orderId' => $orderId,
+                            'currentState' => $currentState,
+                            'paymentState' => $paymentObject->getStateName(),
+                            'paymentId' => $paymentObject->getId(),
+                            'fraudIndicators' => $this->getFraudIndicators($paymentObject)
+                        ]);
+                        // From paid state, we can only transition to cancel, not fail directly
+                        return StateMachineTransitionActions::ACTION_CANCEL;
+                    }
+                    
+                    // Only treat as race condition if no fraud indicators
+                    $this->logger->info('3DS race condition detected: payment canceled but transaction already paid (no fraud indicators)', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState,
+                        'paymentState' => $paymentObject->getStateName()
+                    ]);
+                    return StateMachineTransitionActions::ACTION_PAID;
+                }
+                
+                // If transaction is in progress, likely a webhook race condition
+                if ($currentState === 'in_progress') {
+                    $this->logger->info('3DS race condition detected: payment canceled but transaction in progress', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState,
+                        'paymentState' => $paymentObject->getStateName()
+                    ]);
+                    // Let parent handle the cancellation normally
+                }
+                
+                // If transaction is already failed, don't try to transition again
+                if (in_array($currentState, ['failed', 'cancelled'], true)) {
+                    $this->logger->info('Payment canceled but transaction already in terminal state', [
+                        'orderId' => $orderId,
+                        'currentState' => $currentState,
+                        'paymentState' => $paymentObject->getStateName()
+                    ]);
+                    return StateMachineTransitionActions::ACTION_FAIL; // Keep it as failed
+                }
+            }
+        }
+
+        try {
+            return parent::getTargetPaymentStatus($paymentObject);
+        } catch (TransitionMapperException $exception) {
+            // For credit card payments, if we can't find a valid transition, 
+            // default to cancel action for canceled payments to avoid throwing exceptions
+            if ($paymentObject->isCanceled()) {
+                $this->logger->info('Credit card payment canceled - using cancel action as fallback', [
+                    'paymentId' => $paymentObject->getId(),
+                    'paymentState' => $paymentObject->getStateName(),
+                    'originalException' => $exception->getMessage()
+                ]);
+                return StateMachineTransitionActions::ACTION_CANCEL;
+            }
+            
+            // Re-throw for other cases
+            throw $exception;
+        }
     }
 
     protected function getResourceName(): string
     {
         return Card::getResourceName();
     }
+
 
     protected function mapForAuthorizeMode(Payment $paymentObject): string
     {
@@ -112,30 +193,77 @@ class CreditCardTransitionMapper extends AbstractTransitionMapper
         return $this->checkForRefund($paymentObject, $this->mapPaymentStatus($paymentObject));
     }
 
-    private function getCurrentTransactionState(string $orderId): ?string
+    /**
+     * Check if a payment cancellation is due to fraud or genuine failure
+     * rather than a race condition
+     */
+    private function isPaymentFraudOrFailure(Payment $paymentObject): bool
     {
-        try {
-            $criteria = new Criteria();
-            $criteria->addFilter(new EqualsFilter('orderId', $orderId));
-            $criteria->addAssociation('stateMachineState');
-            
-            $result = $this->orderTransactionRepository->search($criteria, Context::createDefaultContext());
-            $transaction = $result->first();
-            
-            if ($transaction === null) {
-                return null;
-            }
-            
-            $stateMachineState = $transaction->getStateMachineState();
-            if ($stateMachineState === null) {
-                return null;
-            }
-            
-            return $stateMachineState->getTechnicalName();
-            
-        } catch (\Throwable $exception) {
-            // If we can't determine the state, return null
-            return null;
-        }
+        // Check for fraud-related messages
+        $fraudIndicators = $this->getFraudIndicators($paymentObject);
+        
+        return !empty($fraudIndicators);
     }
+    
+    /**
+     * Get list of fraud/failure indicators from payment object
+     */
+    private function getFraudIndicators(Payment $paymentObject): array
+    {
+        $indicators = [];
+        
+        // Check for charge errors - this is the most reliable indicator
+        foreach ($paymentObject->getCharges() as $charge) {
+            // Check charge status for errors
+            if ($charge->isError()) {
+                $indicators[] = 'charge_error_status';
+            }
+        }
+        
+        // Check if payment amount is non-zero but charged amount is zero (typical fraud pattern)
+        $amount = $paymentObject->getAmount();
+        if ($amount && $amount->getTotal() > 0 && $amount->getCharged() === 0.0) {
+            $indicators[] = 'zero_charged_amount_pattern';
+        }
+        
+        // Check if payment is canceled but state suggests it was rejected/failed
+        if ($paymentObject->isCanceled() && $amount && $amount->getCharged() === 0.0) {
+            $indicators[] = 'canceled_with_zero_charge';
+        }
+        
+        return $indicators;
+    }
+    
+    /**
+     * Check if a message contains fraud-related keywords
+     */
+    private function containsFraudKeywords(string $message): bool
+    {
+        $fraudKeywords = [
+            'fraud',
+            'suspected fraud',
+            '3DS User Authentication Failed',
+            'authentication failed',
+            'declined',
+            'insufficient funds',
+            'card declined',
+            'payment declined',
+            'authorization failed',
+            'security check failed',
+            'risk management',
+            'blocked',
+            'restricted'
+        ];
+        
+        $messageLower = strtolower($message);
+        
+        foreach ($fraudKeywords as $keyword) {
+            if (strpos($messageLower, strtolower($keyword)) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
 }

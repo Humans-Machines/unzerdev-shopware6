@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace UnzerPayment6\Components\PaymentTransitionMapper;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Shopware\Core\Framework\Context;
+use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\System\StateMachine\Aggregation\StateMachineTransition\StateMachineTransitionActions;
 use UnzerPayment6\Components\PaymentTransitionMapper\Exception\TransitionMapperException;
 use UnzerPayment6\UnzerPayment6;
@@ -21,6 +27,28 @@ abstract class AbstractTransitionMapper
 
     /** @var bool */
     protected $isShipmentAllowed = false;
+
+    protected ?EntityRepository $transactionRepository = null;
+    protected LoggerInterface $logger;
+
+    public function __construct()
+    {
+        // Constructor intentionally empty - dependencies will be set by child classes
+        // This ensures compatibility with existing service definitions
+        $this->logger = new NullLogger();
+    }
+
+    /**
+     * Set dependencies for getCurrentTransactionState functionality
+     * Called by child classes that have access to these dependencies
+     */
+    protected function setTransactionStateDependencies(?EntityRepository $orderTransactionRepository, ?LoggerInterface $logger = null): void
+    {
+        $this->transactionRepository = $orderTransactionRepository;
+        if ($logger) {
+            $this->logger = $logger;
+        }
+    }
 
     abstract public function supports(BasePaymentType $paymentType): bool;
 
@@ -152,5 +180,40 @@ abstract class AbstractTransitionMapper
     protected function stateMachineTransitionExists(string $stateMachineActionConstantName): bool
     {
         return defined(sprintf('%s::%s', StateMachineTransitionActions::class, $stateMachineActionConstantName));
+    }
+
+    /**
+     * Get the current state of a transaction by order ID
+     * This method helps prevent race conditions by checking current transaction state
+     * before attempting transitions
+     */
+    protected function getCurrentTransactionState(string $orderId): ?string
+    {
+        if (!$this->transactionRepository) {
+            $this->logger->warning('Cannot get transaction state: transactionRepository not available', [
+                'orderId' => $orderId
+            ]);
+            return null;
+        }
+
+        try {
+            $criteria = new Criteria();
+            $criteria->addFilter(new EqualsFilter('orderId', $orderId));
+            $criteria->addAssociation('stateMachineState');
+            
+            $transaction = $this->transactionRepository->search($criteria, Context::createDefaultContext())->first();
+            
+            if ($transaction && $transaction->getStateMachineState()) {
+                return $transaction->getStateMachineState()->getTechnicalName();
+            }
+            
+            return null;
+        } catch (\Throwable $exception) {
+            $this->logger->error('Failed to get current transaction state', [
+                'orderId' => $orderId,
+                'exception' => $exception->getMessage()
+            ]);
+            return null;
+        }
     }
 }

@@ -164,6 +164,32 @@ class PaymentProcessorDecorator extends PaymentProcessor
                 }
             }
             
+            // Check if finalization completed successfully but payment actually failed
+            if ($needsRaceConditionHandling && $result->getException() === null) {
+                $finalTransactionState = $this->getFinalTransactionState($token->getTransactionId(), $context->getContext());
+                
+                // If transaction is in a failed state, throw an exception to redirect to error page
+                if (in_array($finalTransactionState, ['cancelled', 'failed'], true)) {
+                    $this->logger->warning(
+                        '❌ Payment finalization completed successfully but transaction is in failed state - redirecting to error page',
+                        [
+                            'transactionId' => $token->getTransactionId(),
+                            'finalTransactionState' => $finalTransactionState,
+                            'paymentType' => $isCreditCardPayment ? 'Credit Card' : ($isPayPalPayment ? 'PayPal' : 'Other'),
+                        ]
+                    );
+                    
+                    // Create an exception to trigger redirect to error page
+                    $userFriendlyException = new PaymentPendingException(
+                        $token->getTransactionId(),
+                        'Payment was declined or cancelled'
+                    );
+                    
+                    $result->setException($userFriendlyException);
+                    return $result;
+                }
+            }
+            
             $this->logger->info(
                 '✅ PaymentProcessor::finalize() completed successfully',
                 [
@@ -205,6 +231,31 @@ class PaymentProcessorDecorator extends PaymentProcessor
 
             // For payments without race condition handling or other exceptions, re-throw them
             throw $exception;
+        }
+    }
+
+    /**
+     * Get the final transaction state after processing
+     */
+    private function getFinalTransactionState(string $transactionId, Context $context): ?string
+    {
+        try {
+            $criteria = new Criteria([$transactionId]);
+            $criteria->addAssociation('stateMachineState');
+            $orderTransaction = $this->orderTransactionRepository->search($criteria, $context)->first();
+            
+            if (!$orderTransaction || !$orderTransaction->getStateMachineState()) {
+                return null;
+            }
+            
+            return $orderTransaction->getStateMachineState()->getTechnicalName();
+            
+        } catch (\Throwable $exception) {
+            $this->logger->error('Failed to get final transaction state', [
+                'transactionId' => $transactionId,
+                'exception' => $exception->getMessage()
+            ]);
+            return null;
         }
     }
 

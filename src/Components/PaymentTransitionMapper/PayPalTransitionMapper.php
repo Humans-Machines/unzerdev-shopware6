@@ -25,8 +25,9 @@ class PayPalTransitionMapper extends AbstractTransitionMapper
 
     public function __construct(ConfigReaderInterface $configReader, EntityRepository $orderTransactionRepository)
     {
-        $this->configReader               = $configReader;
-        $this->orderTransactionRepository = $orderTransactionRepository;
+        parent::__construct();
+        $this->configReader = $configReader;
+        $this->setTransactionStateDependencies($orderTransactionRepository);
     }
 
     public function supports(BasePaymentType $paymentType): bool
